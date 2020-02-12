@@ -1,8 +1,8 @@
 ################################################################
-### main.py
+# main.py
 ################################################################
 
-#usage: python3 main.py USERNAME B64_PASSWORD ROOM(e.g. S314) BACKUP_ROOM START_TIME END_TIME
+# usage: python3 main.py USERNAME B64_PASSWORD ROOM(e.g. S314) BACKUP_ROOM START_TIME FIRST_END_TIME END_TIME
 
 from selenium import webdriver
 from selenium.webdriver.support.ui import Select
@@ -10,6 +10,7 @@ from selenium.webdriver.chrome.options import Options
 from datetime import datetime, timedelta
 from base64 import b64decode
 from discord_webhook import DiscordWebhook, DiscordEmbed
+from datetime import timedelta
 import sys
 
 # Variables
@@ -27,10 +28,10 @@ BACKUP_BYGG = BYGG_DICT[BACKUP_ROOM[0]]
 
 PWD = str(b64decode(sys.argv[2]), 'utf-8')
 
-TIME1 = sys.argv[5] #start time
-TIME2 = sys.argv[6] #end time
+TIME1 = sys.argv[5]  # start time
+TIME2 = sys.argv[6]  # first end time
+TIME3 = sys.argv[7]  # end time
 
-#format: 'HH:MM'
 
 WEBHOOK = DiscordWebhook(
     url='https://discordapp.com/api/webhooks/676700802001272838/NGKja4yUeqWUYyg-DN85VhQQZJzEHP1h0bONRyBvFycXVeATL4_OsDuH4T6HiNAsmwi8')
@@ -39,13 +40,27 @@ URL = 'https://tp.uio.no/ntnu/rombestilling/'
 
 # Options for Chrome
 CHROME_PATH = '/usr/bin/google-chrome' # May be different
-CHROMEDRIVER_PATH = '/usr/bin/chromedriver'
+CHROMEDRIVER_PATH = '/usr/bin/chromedriver' # May be different
 WINDOW_SIZE = "1920,1080"
 
 chrome_options = Options()
 chrome_options.add_argument("--headless")
 chrome_options.add_argument("--window-size=%s" % WINDOW_SIZE)
 chrome_options.binary_location = CHROME_PATH
+
+def format_time_with_diff(start, end):
+    start_delta = timedelta(hours=int(start[:2]), minutes=int(start[3:]))
+    end_delta = timedelta(hours=int(end[:2]), minutes=int(end[3:]))
+
+    diff_delta = end_delta - start_delta
+    seconds = diff_delta.seconds
+
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+
+    diff_string = f"0{hours}:{minutes if minutes > 10 else '00'}"
+
+    return(f"{diff_string} ({end})")
 
 
 def notify_webhook(is_backup, start, end, date):
@@ -61,7 +76,6 @@ def notify_webhook(is_backup, start, end, date):
                          description=message, color=color)
     WEBHOOK.add_embed(embed)
     WEBHOOK.execute()
-
 
 
 def book_room():
@@ -90,7 +104,7 @@ def book_room():
     start = Select(driver.find_element_by_id('start'))
     start.select_by_visible_text(TIME1)
     duration = Select(driver.find_element_by_id('duration'))
-    duration.select_by_visible_text(TIME2)
+    duration.select_by_visible_text(format_time_with_diff(TIME1, TIME2))
 
     # Calculate 14 days in the future and set the date
     deltadate = datetime.today() + timedelta(days=14)
@@ -117,6 +131,8 @@ def book_room():
     bygg = ''
     room = ''
 
+    driver.find_element_by_xpath("//button[@id='preformsubmit']").click()
+
     # Send notification if the room is unavailable
     if f'{BYGG} {ROOM}' in driver.page_source:
         bygg = BYGG
@@ -136,10 +152,50 @@ def book_room():
 
     # Confirm order
     driver.find_element_by_id("rb-bestill").click()
+
+    description = driver.find_element_by_id('name')
+    description.send_keys('Bachelor')
+
     driver.find_element_by_xpath(
-        "//input[contains(@value, 'Bekreft')]").click()
+        "//button[@name='confirm']").click()
     driver.find_element_by_xpath(
         "//input[contains(@value, 'samme kriterier')]").click()
+
+    # Repeat
+    start = Select(driver.find_element_by_id('start'))
+    start.select_by_visible_text(TIME2)
+    duration = Select(driver.find_element_by_id('duration'))
+    duration.select_by_visible_text(format_time_with_diff(TIME2, TIME3))
+
+    driver.find_element_by_xpath("//button[@id='preformsubmit']").click()
+
+    # Send notification if the room is unavailable
+    if room is ROOM and f'{bygg} {room}' not in driver.page_source:
+        if f'{BACKUP_BYGG} {BACKUP_ROOM}' in driver.page_source:
+            bygg = BACKUP_BYGG
+            room = BACKUP_ROOM
+        else:
+            notify_webhook(False, TIME2, TIME3, date)
+            driver.close()
+            return
+    elif room is BACKUP_ROOM and f'{bygg} {room}' not in driver.page_source:
+        if f'{BYGG} {ROOM}' in driver.page_source:
+            bygg = BYGG
+            room = ROOM
+        else:
+            notify_webhook(False, TIME2, TIME3, date)
+            driver.close()
+            return
+
+    driver.find_element_by_xpath(
+        f"// tr[td/a/text()[contains(., '{bygg} {room}')]]/td[@title='Velg']/input").click()
+    driver.find_element_by_id("rb-bestill").click()
+
+    description = driver.find_element_by_id('name')
+    description.send_keys('Bachelor')
+
+    driver.find_element_by_xpath(
+        "//button[@name='confirm']").click()
 
     # Close the driver
     driver.close()
