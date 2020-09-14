@@ -32,9 +32,9 @@ TIME1 = sys.argv[5]  # start time
 TIME2 = sys.argv[6]  # first end time
 TIME3 = sys.argv[7]  # end time
 
-
+# Add WebHook URL from Discord
 WEBHOOK = DiscordWebhook(
-    url='https://discordapp.com/api/webhooks/676700802001272838/NGKja4yUeqWUYyg-DN85VhQQZJzEHP1h0bONRyBvFycXVeATL4_OsDuH4T6HiNAsmwi8')
+    url='--- Insert URL here ---')
 
 URL = 'https://tp.uio.no/ntnu/rombestilling/'
 
